@@ -1,88 +1,121 @@
 import streamlit as st
-from supabase import create_client, Client
+from supabase import create_client
 
-# --- PAGE CONFIGURATION (UI POLISH) ---
-st.set_page_config(
-    page_title="Voter Search Portal",
-    page_icon="🗳️",
-    layout="centered"
-)
+# --- পেজ কনফিগারেশন ---
+st.set_page_config(page_title="ভোটার অনুসন্ধান", page_icon="🗳️", layout="centered")
 
-# --- CUSTOM CSS (This makes it look original/custom) ---
+# --- কাস্টম CSS (সুন্দর UI এর জন্য) ---
 st.markdown("""
     <style>
-    .main {
-        background-color: #f8f9fa; 
+    .stButton button { width: 100%; }
+    .result-box {
+        padding: 15px; border: 1px solid #ddd; border-radius: 10px;
+        background-color: #f9f9f9; margin-bottom: 10px;
     }
-    .stButton>button {
-        width: 100%;
-        background-color: #0d6efd;
-        color: white;
-        font-weight: bold;
-        border-radius: 8px;
-        padding: 0.5rem;
-    }
-    .stTextInput>div>div>input {
-        border-radius: 8px;
-    }
-    .voter-card {
-        background-color: white;
-        padding: 20px;
-        border-radius: 10px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        margin-bottom: 15px;
-        border-left: 5px solid #0d6efd;
-    }
-    .voter-name { font-size: 1.2rem; font-weight: bold; color: #212529; }
-    .voter-info { font-size: 0.9rem; color: #6c757d; }
-    .highlight { color: #0d6efd; font-weight: bold; }
+    .result-name { font-size: 18px; font-weight: bold; color: #0d6efd; }
+    .detail-row { border-bottom: 1px solid #eee; padding: 5px 0; display: flex; justify-content: space-between; }
+    .detail-label { font-weight: bold; color: #555; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- CONNECT TO DB ---
-# We use st.secrets for security
+# --- ডাটাবেস কানেকশন ---
 @st.cache_resource
 def init_connection():
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_KEY"]
-    return create_client(url, key)
+    try:
+        return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+    except:
+        st.error("Supabase Secrets পাওয়া যায়নি! Advanced Settings চেক করুন।")
+        st.stop()
 
 supabase = init_connection()
 
-# --- APP UI ---
+# --- পপ-আপ ফাংশন (Details Popup) ---
+@st.dialog("ভোটার বিস্তারিত তথ্য")
+def show_details(voter):
+    # ২০টি কলাম সুন্দর করে সাজানো
+    details = {
+        "নাম": voter.get('name'),
+        "সিরিয়াল নং": voter.get('serial_no'),
+        "ভোটার নং": voter.get('voter_no'),
+        "লিঙ্গ": voter.get('gender'),
+        "পিতা": voter.get('father'),
+        "মাতা": voter.get('mother'),
+        "পেশা": voter.get('profession'),
+        "জন্ম তারিখ": voter.get('dob'),
+        "মোবাইল/ফোন": "N/A", # যদি ডাটাবেসে না থাকে
+        "ঠিকানা": voter.get('address'),
+        "ভোটার এলাকা": f"{voter.get('voter_area_name')} ({voter.get('area_code')})",
+        "জেলা": voter.get('district'),
+        "উপজেলা/থানা": voter.get('upazila'),
+        "সিটি কর্পোরেশন": voter.get('city_corp'),
+        "ওয়ার্ড (ইউনিয়ন)": voter.get('ward_union'),
+        "ইউনিয়ন/ওয়ার্ড": voter.get('union_ward'),
+        "পোস্ট অফিস": voter.get('post_office'),
+        "পোস্টকোড": voter.get('postcode'),
+        "অঞ্চল": voter.get('region'),
+        "ভোটকেন্দ্র": voter.get('polling_center')
+    }
+
+    for key, value in details.items():
+        st.markdown(f"""
+        <div class="detail-row">
+            <span class="detail-label">{key}</span>
+            <span>{value if value else '-'}</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+# --- মেইন UI ---
 st.title("🗳️ ভোটার তথ্য যাচাইকরণ")
-st.markdown("নিচের তথ্য দিয়ে ভোটার তালিকা অনুসন্ধান করুন।")
 
-with st.container():
-    col1, col2 = st.columns(2)
-    with col1:
-        area_code = st.text_input("এলাকা কোড (আবশ্যিক)", placeholder="যেমন: 2797")
-    with col2:
-        gender = st.selectbox("লিঙ্গ", ["পুরুষ", "মহিলা", "হিজড়া"])
-    
-    name_input = st.text_input("নাম বা পিতার নাম (ঐচ্ছিক)", placeholder="নামের যেকোনো অংশ...")
-    
-    search_btn = st.button("তথ্য খুঁজুন")
+# ১. লোকেশন সিলেকশন (Location Specification)
+st.subheader("১. এলাকা নির্বাচন")
+area_code = st.text_input("ভোটার এলাকা কোড (Area Code)", placeholder="যেমন: 2797")
 
-# --- LOGIC ---
+# ২. ব্যক্তি শনাক্তকরণ (Person Specification)
+st.subheader("২. ব্যক্তি শনাক্তকরণ")
+col1, col2 = st.columns(2)
+with col1:
+    gender = st.selectbox("লিঙ্গ (বাধ্যতামূলক)", ["পুরুষ", "মহিলা", "হিজড়া"], index=0)
+with col2:
+    dob = st.text_input("জন্ম তারিখ (ঐচ্ছিক)", placeholder="DD/MM/YYYY")
+
+col3, col4 = st.columns(2)
+with col3:
+    name_input = st.text_input("নাম (ঐচ্ছিক)", placeholder="নামের অংশ...")
+with col4:
+    parent_input = st.text_input("পিতা/মাতার নাম (ঐচ্ছিক)", placeholder="নামের অংশ...")
+
+search_btn = st.button("অনুসন্ধান করুন", type="primary")
+
+# --- লজিক ---
 if search_btn:
+    # ভ্যালিডেশন লজিক
     if not area_code:
         st.warning("⚠️ দয়া করে ভোটার এলাকা কোড প্রদান করুন।")
+    elif not (dob or name_input or parent_input):
+        st.error("⚠️ লিঙ্গের সাথে অন্তত একটি তথ্য দিতে হবে: নাম, পিতা/মাতার নাম অথবা জন্ম তারিখ।")
     else:
-        with st.spinner("ডাটাবেস অনুসন্ধান করা হচ্ছে..."):
+        with st.spinner("তথ্য খোঁজা হচ্ছে..."):
             try:
-                # Optimized Query
-                query = supabase.table("voters")\
-                    .select("*")\
-                    .eq("area_code", area_code)\
-                    .eq("gender", gender)
+                # কুয়েরি তৈরি
+                query = supabase.table("voters").select("*")
                 
+                # ফিল্টার
+                query = query.eq("area_code", area_code) # লোকেশন
+                query = query.eq("gender", gender)       # জেন্ডার (বাধ্যতামূলক)
+
+                # অপশনাল ফিল্টার (যেকোনো একটি মিললেই হবে এমন লজিক অথবা সব ফিল্টার অ্যাপ্লাই)
+                # ব্যবহারকারীর ইনপুট অনুযায়ী ন্যারো ডাউন করা হচ্ছে
+                if dob:
+                    query = query.ilike("dob", f"%{dob}%")
                 if name_input:
-                    # Case insensitive partial match
-                    query = query.or_(f"name.ilike.%{name_input}%,father.ilike.%{name_input}%")
-                
-                # Fetch top 20 results
-                response = query.limit(20).execute()
+                    query = query.ilike("name", f"%{name_input}%")
+                if parent_input:
+                    # পিতা অথবা মাতা যেকোনো একটায় মিললেই হবে
+                    query = query.or_(f"father.ilike.%{parent_input}%,mother.ilike.%{parent_input}%")
+
+                # ১০০ রেজাল্ট লিমিট
+                response = query.limit(100).execute()
                 data = response.data
 
                 if not data:
@@ -90,18 +123,24 @@ if search_btn:
                 else:
                     st.success(f"✅ {len(data)} জন ভোটার পাওয়া গেছে")
                     
+                    # লিস্ট দেখানো
                     for voter in data:
-                        # Professional HTML Card Design
-                        st.markdown(f"""
-                        <div class="voter-card">
-                            <div class="voter-name">{voter['name']}</div>
-                            <div class="voter-info">
-                                পিতা: <b>{voter['father']}</b> <br>
-                                ভোটার নং: <span class="highlight">{voter['voter_no']}</span> | সিরিয়াল: {voter['serial_no']}<br>
-                                <small>ঠিকানা: {voter['address']}</small>
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                        # কার্ড ডিজাইন
+                        with st.container():
+                            col_info, col_btn = st.columns([0.7, 0.3])
+                            
+                            with col_info:
+                                st.markdown(f"""
+                                <div class="result-name">{voter.get('name', 'নাম নেই')}</div>
+                                <small>পিতা: {voter.get('father', '-')} | ভোটার নং: {voter.get('voter_no', '-')}</small>
+                                """, unsafe_allow_html=True)
+                            
+                            with col_btn:
+                                # বাটনে ক্লিক করলে পপ-আপ ওপেন হবে
+                                if st.button("বিস্তারিত", key=voter['voter_no']):
+                                    show_details(voter)
+                            
+                            st.divider()
 
             except Exception as e:
-                st.error(f"Error connecting to database: {e}")
+                st.error(f"সার্ভার এরর: {e}")
