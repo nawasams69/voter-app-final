@@ -162,7 +162,7 @@ if search_btn:
         with st.spinner("তথ্য খোঁজা হচ্ছে..."):
             try:
                 # কুয়েরি তৈরি
-                query = supabase.table("voters").select("*")
+                query = supabase.table("Voter").select("*")
                 
                 # ১. লোকেশন ফিল্টার (নাম দিয়ে সার্চ হবে)
                 # ডাটাবেসের 'voter_area_name' কলামের সাথে ড্রপডাউনের নাম মিলানো হচ্ছে
@@ -203,3 +203,4 @@ if search_btn:
 
             except Exception as e:
                 st.error(f"সার্ভার এরর: {e}")
+
